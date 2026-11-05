@@ -1863,10 +1863,21 @@
                             <span class="text-slate-300">Show Background Image</span>
                             <input type="checkbox" id="bg-img-visible-insp" ${bgImageVisible ? 'checked' : ''} onchange="bgImageVisible = this.checked; updateBackgroundImageProps()" class="rounded bg-slate-800 border-slate-700 text-indigo-600">
                         </label>
+                        <label class="flex items-center justify-between text-xs cursor-pointer">
+                            <span class="text-slate-300">Always Keep in Center</span>
+                            <input type="checkbox" id="bg-img-centered-insp" ${bgImageCenteredAndScaled ? 'checked' : ''} onchange="bgImageCenteredAndScaled = this.checked; if(this.checked) centerReferenceImagePosition();" class="rounded bg-slate-800 border-slate-700 text-indigo-600">
+                        </label>
                         <div>
                             <div class="flex justify-between text-[11px] text-slate-400 mb-1">
-                               <span>Opacity</span>
-                               <span id="bg-opacity-label-insp">${Math.round(bgImageOpacity * 100)}%</span>
+                                <span>Scale Image</span>
+                                <span id="bg-scale-label-insp">${Math.round((bgImageCenteredAndScaled ? (bgImgData.width / 800) : 1) * 100)}%</span>
+                            </div>
+                            <input type="range" id="bg-img-scale-insp" min="0.1" max="3" step="0.05" value="${bgImgData.width / 800}" oninput="scaleReferenceImageFromSlider(this.value)" class="w-full accent-indigo-500 bg-slate-800 h-1 rounded">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                                <span>Opacity</span>
+                                <span id="bg-opacity-label-insp">${Math.round(bgImageOpacity * 100)}%</span>
                             </div>
                             <input type="range" id="bg-img-opacity-insp" min="0.05" max="1" step="0.05" value="${bgImageOpacity}" oninput="bgImageOpacity = parseFloat(this.value); document.getElementById('bg-opacity-label-insp').textContent = Math.round(bgImageOpacity * 100) + '%'; updateBackgroundImageProps()" class="w-full accent-indigo-500 bg-slate-800 h-1 rounded">
                         </div>
@@ -2270,6 +2281,9 @@
                     const item = document.createElement('div');
                     const isSelected = selectedElementIds.includes(child.id);
                     const isHighlighted = child.id === highlightedElementId;
+                    const tag = child.tagName.toLowerCase();
+                    const isGroup = tag === 'g';
+                    const isCollapsed = isGroup && collapsedGroups.has(child.id);
 
                     let bgClass = "bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800";
                     if (isSelected) bgClass = "bg-indigo-600/20 border-indigo-500 text-white";
@@ -2280,7 +2294,6 @@
                     item.setAttribute('draggable', 'true');
                     item.setAttribute('data-id', child.id);
 
-                    const tag = child.tagName.toLowerCase();
                     let icon = "fa-shapes";
                     if (tag === 'rect') icon = "fa-square text-indigo-400";
                     else if (tag === 'circle') icon = "fa-circle text-rose-400";
@@ -2290,7 +2303,9 @@
                     else if (tag === 'polygon') icon = "fa-draw-polygon text-purple-400";
                     else if (tag === 'g') icon = "fa-folder text-amber-300";
 
-                    item.innerHTML = `<div class="flex items-center space-x-2 truncate pointer-events-none"><i class="fa-solid ${icon}"></i><span class="font-mono font-medium">${tag}</span><span class="text-[10px] text-slate-500 truncate">#${child.id}</span></div>`;
+                    let expandBtnHtml = isGroup ? `<button onclick="toggleGroupCollapse('${child.id}', event)" class="w-4 h-4 flex items-center justify-center text-slate-400 hover:text-white mr-1 cursor-pointer"><i class="fa-solid ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'} text-[10px]"></i></button>` : `<span class="w-4 mr-1"></span>`;
+
+                    item.innerHTML = `<div class="flex items-center space-x-2 truncate">${expandBtnHtml}<i class="fa-solid ${icon} pointer-events-none"></i><span class="font-mono font-medium pointer-events-none">${tag}</span><span class="text-[10px] text-slate-500 truncate pointer-events-none">#${child.id}</span></div>`;
                     
                     item.addEventListener('dragstart', (e) => {
                         e.stopPropagation();
@@ -2357,14 +2372,12 @@
                         const allIds = getAllFlatLayerIds();
 
                         if (e.shiftKey && lastSelectedLayerId && allIds.includes(lastSelectedLayerId)) {
-                            // Shift range selection (Explorer-style)
                             const idx1 = allIds.indexOf(lastSelectedLayerId);
                             const idx2 = allIds.indexOf(child.id);
                             const start = Math.min(idx1, idx2);
                             const end = Math.max(idx1, idx2);
                             selectedElementIds = allIds.slice(start, end + 1);
                         } else if (e.ctrlKey || e.metaKey) {
-                            // Ctrl toggle selection
                             if (selectedElementIds.includes(child.id)) {
                                 selectedElementIds = selectedElementIds.filter(id => id !== child.id);
                             } else {
@@ -2372,7 +2385,6 @@
                             }
                             lastSelectedLayerId = child.id;
                         } else {
-                            // Direct click selects item alone
                             selectedElementIds = [child.id];
                             lastSelectedLayerId = child.id;
                         }
@@ -2385,7 +2397,7 @@
 
                     container.appendChild(item);
 
-                    if (tag === 'g' && child.children.length > 0) {
+                    if (isGroup && !isCollapsed && child.children.length > 0) {
                         appendNodes(child, depth + 1);
                     }
                 });
@@ -2488,13 +2500,23 @@
                 tempImg.onload = function() {
                     bgImgData = { x: 0, y: 0, width: tempImg.width || 400, height: tempImg.height || 300 };
                     applyBgImgAttributes();
-                    document.getElementById('bg-image-controls').classList.remove('hidden');
+                    const controlsEl = document.getElementById('bg-image-controls');
+                    if (controlsEl) controlsEl.classList.remove('hidden');
                 };
                 tempImg.src = bgImageSrc;
             };
             reader.readAsDataURL(file);
         }
 
+        function removeBackgroundImage() {
+            bgImageSrc = '';
+            isBgTransformMode = false;
+            document.getElementById('bg-raster-image').style.display = 'none';
+            const controlsEl = document.getElementById('bg-image-controls');
+            if (controlsEl) controlsEl.classList.add('hidden');
+            updateInteractiveOverlay();
+        }
+        
         function applyBgImgAttributes() {
             const bgImgEl = document.getElementById('bg-raster-image');
             bgImgEl.setAttribute('x', bgImgData.x);
@@ -3627,53 +3649,81 @@ function updateRefImageProp(prop, value) {
     updateInteractiveOverlay();
 }
 
-function saveReferenceImageSetup() {
-    const config = {
-        version: "1.0",
-        bgImgData: bgImgData,
-        opacity: bgImageOpacity,
-        visible: bgImageVisible
-    };
-    const jsonStr = JSON.stringify(config, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'ref-image-setup.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
+        function scaleReferenceImageFromSlider(val) {
+            let scale = parseFloat(val) || 1;
+            document.getElementById('bg-scale-label-insp').textContent = Math.round(scale * 100) + '%';
+            
+            const mainSvg = document.getElementById('main-svg-canvas');
+            const vb = mainSvg.getAttribute('viewBox') || '0 0 800 600';
+            const vbParts = vb.split(/[\s,]+/).map(Number);
+            const baseW = vbParts[2] || 800;
+            const baseH = vbParts[3] || 600;
 
-function loadReferenceImageSetup(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(event) {
-        try {
-            const config = JSON.parse(event.target.result);
-            if (config.bgImgData) {
-                bgImgData = config.bgImgData;
-                applyBgImgAttributes();
+            bgImgData.width = baseW * scale;
+            bgImgData.height = baseH * scale;
+
+            if (bgImageCenteredAndScaled) {
+                const canvasCenterX = baseW / 2;
+                const canvasCenterY = baseH / 2;
+                bgImgData.x = canvasCenterX - bgImgData.width / 2;
+                bgImgData.y = canvasCenterY - bgImgData.height / 2;
             }
-            if (typeof config.opacity !== 'undefined') {
-                bgImageOpacity = config.opacity;
-            }
-            if (typeof config.visible !== 'undefined') {
-                bgImageVisible = config.visible;
-            }
-            updateBackgroundImageProps();
+
+            applyBgImgAttributes();
             updateInteractiveOverlay();
-            updateInspector();
-        } catch(err) {
-            alert("Invalid configuration file format.");
         }
-    };
-    reader.readAsText(file);
-}
 
-function exportRaster(format) {
+        function saveReferenceImageSetup() {
+            const config = {
+                version: "1.0",
+                bgImgData: bgImgData,
+                opacity: bgImageOpacity,
+                visible: bgImageVisible,
+                centered: bgImageCenteredAndScaled
+            };
+            const jsonStr = JSON.stringify(config, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'setupjson.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function loadReferenceImageSetup(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const config = JSON.parse(event.target.result);
+                    if (config.bgImgData) {
+                        bgImgData = config.bgImgData;
+                        applyBgImgAttributes();
+                    }
+                    if (typeof config.opacity !== 'undefined') {
+                        bgImageOpacity = config.opacity;
+                    }
+                    if (typeof config.visible !== 'undefined') {
+                        bgImageVisible = config.visible;
+                    }
+                    if (typeof config.centered !== 'undefined') {
+                        bgImageCenteredAndScaled = config.centered;
+                    }
+                    updateBackgroundImageProps();
+                    updateInteractiveOverlay();
+                    updateInspector();
+                } catch(err) {
+                    alert("Invalid configuration file format.");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function exportRaster(format) {
             const mainSvg = document.getElementById('main-svg-canvas');
             const vb = mainSvg.getAttribute('viewBox') || '0 0 800 600';
             const vbParts = vb.split(/[\s,]+/).map(Number);
@@ -3690,9 +3740,11 @@ function exportRaster(format) {
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');
 
-                // Fill white background for export
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, width, height);
+                // Fill background with white for JPEG, keep transparent for PNG
+                if (format !== 'png') {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, width, height);
+                }
                 ctx.drawImage(img, 0, 0, width, height);
                 URL.revokeObjectURL(url);
 
@@ -3727,8 +3779,10 @@ function exportRaster(format) {
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');
 
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, width, height);
+                if (format !== 'png') {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, width, height);
+                }
                 ctx.drawImage(img, 0, 0, width, height);
                 URL.revokeObjectURL(url);
 
@@ -3760,6 +3814,18 @@ function exportRaster(format) {
             };
 
             img.src = url;
+        }
+
+        let collapsedGroups = new Set();
+
+        function toggleGroupCollapse(groupId, e) {
+            e.stopPropagation();
+            if (collapsedGroups.has(groupId)) {
+                collapsedGroups.delete(groupId);
+            } else {
+                collapsedGroups.add(groupId);
+            }
+            renderLayerTree();
         }
     </script>
 </body>
